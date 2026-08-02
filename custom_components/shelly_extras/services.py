@@ -34,6 +34,7 @@ from homeassistant.components.shelly.const import (
 )
 from homeassistant.components.shelly.light import BlockShellyLight, RpcShellyLightBase
 from homeassistant.components.shelly.utils import brightness_to_percentage
+from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.entity_component import DATA_INSTANCES
@@ -185,6 +186,32 @@ class LightProperties:
         )
 
 
+def _expand_group_members(hass: HomeAssistant, entity_ids: set[str]) -> set[str]:
+    """Recursively expand group entities into their member entity ids.
+
+    Group entities (e.g. light groups created via the Group helper) live in the
+    ``light`` domain and are not expanded by ``group.expand_entity_ids`` (which
+    only handles the ``group.*`` domain). They advertise their members through
+    the ``entity_id`` state attribute, which is what we follow here. Leaf
+    entities (no ``entity_id`` attribute) are returned as-is.
+    """
+    resolved: set[str] = set()
+    seen: set[str] = set()
+    stack = list(entity_ids)
+    while stack:
+        entity_id = stack.pop()
+        if entity_id in seen:
+            continue
+        seen.add(entity_id)
+        state = hass.states.get(entity_id)
+        members = state.attributes.get(ATTR_ENTITY_ID) if state else None
+        if members:
+            stack.extend(members)
+        else:
+            resolved.add(entity_id)
+    return resolved
+
+
 def _resolve_shelly_light(
     hass: HomeAssistant, entity_id: str
 ) -> RpcShellyLightBase | BlockShellyLight | None:
@@ -310,7 +337,9 @@ async def _async_change_light(call: ServiceCall) -> None:
         )
 
     selected = async_extract_referenced_entity_ids(hass, TargetSelection(call.data))
-    entity_ids = selected.referenced | selected.indirectly_referenced
+    entity_ids = _expand_group_members(
+        hass, selected.referenced | selected.indirectly_referenced
+    )
 
     lights = [
         (entity_id, entity)

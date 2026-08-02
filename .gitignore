@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Home Assistant test config artifacts
+config/.storage/
+config/.cloud/
+config/home-assistant*.log*
+config/home-assistant_v2.db*
+config/.HA_VERSION
+config/deps/
+config/tts/
+
+# OS / editor
+.DS_Store
+.idea/
+*.swp

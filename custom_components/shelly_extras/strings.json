@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Shelly Extras",
+        "description": "Add the Shelly Extras actions to Home Assistant. No configuration is required."
+      }
+    },
+    "abort": {
+      "already_configured": "Shelly Extras is already set up."
+    }
+  }
+}

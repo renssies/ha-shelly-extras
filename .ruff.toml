@@ -1,0 +1,19 @@
+target-version = "py313"
+
+[lint]
+select = ["ALL"]
+ignore = [
+    "ANN101", "ANN102", "ANN401",
+    "D203", "D213",
+    "COM812", "ISC001",
+    "TID252",
+]
+
+[lint.per-file-ignores]
+"tests/*" = ["S101", "D"]
+
+[lint.flake8-pytest-style]
+fixture-parentheses = false
+
+[lint.pydocstyle]
+convention = "pep257"

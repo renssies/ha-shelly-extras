@@ -12,40 +12,63 @@
   },
   "exceptions": {
     "no_properties": {
-      "message": "Specify at least one property to set (brightness, color temperature or color)."
+      "message": "Specify at least one property to change (brightness, color temperature or color)."
     },
     "no_shelly_lights": {
       "message": "No Shelly lights were found in the selected target. This action only works on lights from the core Shelly integration."
+    },
+    "invalid_color_name": {
+      "message": "Unknown color name: {name}."
     }
   },
   "services": {
-    "set_light_properties": {
-      "name": "Set light properties",
-      "description": "Changes brightness, color or color temperature of Shelly lights without changing their on/off state. If a light is off it stays off; the new values apply the next time it turns on.",
+    "change_light": {
+      "name": "Change light",
+      "description": "Changes brightness, color or color temperature of Shelly lights without changing their on/off state. If a light is off it stays off; the new values apply the next time it turns on. Fields match light.turn_on, so this is a drop-in replacement.",
       "fields": {
+        "transition": {
+          "name": "Transition",
+          "description": "Duration, in seconds, over which to fade to the new values."
+        },
+        "rgb_color": {
+          "name": "Color",
+          "description": "Color in RGB format. A list of three integers, each 0-255."
+        },
+        "color_temp_kelvin": {
+          "name": "Color temperature",
+          "description": "White color temperature in Kelvin."
+        },
         "brightness": {
           "name": "Brightness",
           "description": "Brightness, 0-255. Takes precedence over brightness (%)."
         },
         "brightness_pct": {
-          "name": "Brightness (%)",
+          "name": "Brightness",
           "description": "Brightness in percent, 0-100."
         },
-        "color_temp_kelvin": {
-          "name": "Color temperature",
-          "description": "White color temperature in Kelvin. Applied to lights that support color temperature."
-        },
-        "rgb_color": {
-          "name": "RGB color",
-          "description": "Color as a list of red, green and blue values (0-255 each)."
+        "color_temp": {
+          "name": "Color temperature (mireds)",
+          "description": "White color temperature in mireds. Converted to Kelvin."
         },
         "rgbw_color": {
-          "name": "RGBW color",
-          "description": "Color as a list of red, green, blue and white values (0-255 each). Applied to RGBW lights."
+          "name": "RGBW-color",
+          "description": "Color in RGBW format. A list of four integers, each 0-255."
         },
-        "transition": {
-          "name": "Transition",
-          "description": "Duration, in seconds, over which to fade to the new values."
+        "rgbww_color": {
+          "name": "RGBWW-color",
+          "description": "Color in RGBWW format. A list of five integers, each 0-255. The two white values are combined into the single Shelly white channel."
+        },
+        "hs_color": {
+          "name": "Color (hue, saturation)",
+          "description": "Color in hue/saturation format. Hue 0-360, saturation 0-100."
+        },
+        "xy_color": {
+          "name": "XY-color",
+          "description": "Color in XY format. A list of two floats between 0 and 1."
+        },
+        "color_name": {
+          "name": "Color name",
+          "description": "A human-readable CSS color name, e.g. \"tomato\"."
         }
       }
     }

@@ -1,5 +1,8 @@
-# Actions (services) exposed by Shelly Extras.
-set_light_properties:
+# The change_light action. Fields mirror light.turn_on (names, selectors and
+# capability filters) so it is a drop-in replacement. The `filter` blocks hide
+# fields that don't apply to the selected light (e.g. a brightness-only light
+# shows no color fields), exactly like light.turn_on.
+change_light:
   # Same target picker as light.turn_on, restricted to Shelly lights: a single
   # light entity, a device, an area, or a label all work.
   target:
@@ -7,47 +10,98 @@ set_light_properties:
       domain: light
       integration: shelly
   fields:
-    brightness:
-      required: false
-      example: 128
-      selector:
-        number:
-          min: 0
-          max: 255
-          mode: slider
-    brightness_pct:
-      required: false
-      example: 50
-      selector:
-        number:
-          min: 0
-          max: 100
-          unit_of_measurement: "%"
-          mode: slider
-    color_temp_kelvin:
-      required: false
-      example: 3500
-      selector:
-        color_temp:
-          unit: kelvin
-          min: 2000
-          max: 6500
-    rgb_color:
-      required: false
-      example: "[255, 100, 100]"
-      selector:
-        color_rgb:
-    rgbw_color:
-      required: false
-      example: "[255, 100, 100, 255]"
-      selector:
-        object:
     transition:
-      required: false
-      example: 2
+      filter:
+        supported_features:
+          - light.LightEntityFeature.TRANSITION
       selector:
         number:
           min: 0
           max: 300
           unit_of_measurement: seconds
-          mode: box
+    rgb_color:
+      filter: &color_support
+        attribute:
+          supported_color_modes:
+            - light.ColorMode.HS
+            - light.ColorMode.XY
+            - light.ColorMode.RGB
+            - light.ColorMode.RGBW
+            - light.ColorMode.RGBWW
+      example: "[255, 100, 100]"
+      selector:
+        color_rgb:
+    color_temp_kelvin:
+      filter: &color_temp_support
+        attribute:
+          supported_color_modes:
+            - light.ColorMode.COLOR_TEMP
+            - light.ColorMode.HS
+            - light.ColorMode.XY
+            - light.ColorMode.RGB
+            - light.ColorMode.RGBW
+            - light.ColorMode.RGBWW
+      selector:
+        color_temp:
+          unit: kelvin
+          min: 2000
+          max: 6500
+    brightness:
+      filter: &brightness_support
+        attribute:
+          supported_color_modes:
+            - light.ColorMode.BRIGHTNESS
+            - light.ColorMode.COLOR_TEMP
+            - light.ColorMode.HS
+            - light.ColorMode.XY
+            - light.ColorMode.RGB
+            - light.ColorMode.RGBW
+            - light.ColorMode.RGBWW
+      selector:
+        number:
+          min: 0
+          max: 255
+    brightness_pct:
+      filter: *brightness_support
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
+    color_temp:
+      filter: *color_temp_support
+      advanced: true
+      selector:
+        color_temp:
+          unit: mired
+          min: 153
+          max: 500
+    rgbw_color:
+      filter: *color_support
+      advanced: true
+      example: "[255, 100, 100, 50]"
+      selector:
+        object:
+    rgbww_color:
+      filter: *color_support
+      advanced: true
+      example: "[255, 100, 100, 50, 70]"
+      selector:
+        object:
+    hs_color:
+      filter: *color_support
+      advanced: true
+      example: "[300, 70]"
+      selector:
+        object:
+    xy_color:
+      filter: *color_support
+      advanced: true
+      example: "[0.52, 0.43]"
+      selector:
+        object:
+    color_name:
+      filter: *color_support
+      advanced: true
+      selector:
+        text:

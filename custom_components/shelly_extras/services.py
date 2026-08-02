@@ -1,8 +1,8 @@
 """Service (action) registration for Shelly Extras.
 
-The ``shelly_extras.set_light_properties`` action changes light properties
-(brightness, color, color temperature) on lights provided by the core Shelly
-integration *without changing their power state*.
+The ``shelly_extras.change_light`` action changes light properties (brightness,
+color, color temperature) on lights provided by the core Shelly integration
+*without changing their power state*.
 
 Home Assistant's own ``light.turn_on`` always powers a light on when you set a
 property. Shelly devices, however, accept property changes independently of the
@@ -10,6 +10,9 @@ on/off state: RPC (Gen2+) devices via ``<Component>.Set`` with the ``on`` field
 omitted, and block (Gen1) devices via ``set_state`` with the ``turn`` field
 omitted. This action reuses the core Shelly integration's own device connection
 and error handling to do exactly that.
+
+The service fields deliberately mirror ``light.turn_on`` (same names, same
+selectors, same capability filters) so this action is a drop-in replacement.
 """
 
 from __future__ import annotations
@@ -38,17 +41,23 @@ from homeassistant.helpers.target import (
     TargetSelection,
     async_extract_referenced_entity_ids,
 )
+from homeassistant.util import color as color_util
 
 from .const import (
     ATTR_BRIGHTNESS,
     ATTR_BRIGHTNESS_PCT,
+    ATTR_COLOR_NAME,
+    ATTR_COLOR_TEMP,
     ATTR_COLOR_TEMP_KELVIN,
+    ATTR_HS_COLOR,
     ATTR_RGB_COLOR,
     ATTR_RGBW_COLOR,
+    ATTR_RGBWW_COLOR,
     ATTR_TRANSITION,
+    ATTR_XY_COLOR,
     DOMAIN,
     LOGGER,
-    SERVICE_SET_LIGHT_PROPERTIES,
+    SERVICE_CHANGE_LIGHT,
 )
 
 if TYPE_CHECKING:
@@ -60,9 +69,28 @@ _MIN_KELVIN = 1000
 _MAX_KELVIN = 12000
 _MAX_TRANSITION_SEC = 300
 
-SET_LIGHT_PROPERTIES_SCHEMA = vol.Schema(
+_RGB = vol.ExactSequence((cv.byte, cv.byte, cv.byte))
+_RGBW = vol.ExactSequence((cv.byte, cv.byte, cv.byte, cv.byte))
+_RGBWW = vol.ExactSequence((cv.byte, cv.byte, cv.byte, cv.byte, cv.byte))
+_HS = vol.ExactSequence(
+    (
+        vol.All(vol.Coerce(float), vol.Range(min=0, max=360)),
+        vol.All(vol.Coerce(float), vol.Range(min=0, max=100)),
+    )
+)
+_XY = vol.ExactSequence(
+    (
+        vol.All(vol.Coerce(float), vol.Range(min=0, max=1)),
+        vol.All(vol.Coerce(float), vol.Range(min=0, max=1)),
+    )
+)
+
+CHANGE_LIGHT_SCHEMA = vol.Schema(
     {
         **cv.ENTITY_SERVICE_FIELDS,
+        vol.Optional(ATTR_TRANSITION): vol.All(
+            vol.Coerce(float), vol.Range(0, _MAX_TRANSITION_SEC)
+        ),
         vol.Optional(ATTR_BRIGHTNESS): vol.All(vol.Coerce(int), vol.Range(0, 255)),
         vol.Optional(ATTR_BRIGHTNESS_PCT): vol.All(
             vol.Coerce(float), vol.Range(0, 100)
@@ -70,22 +98,24 @@ SET_LIGHT_PROPERTIES_SCHEMA = vol.Schema(
         vol.Optional(ATTR_COLOR_TEMP_KELVIN): vol.All(
             vol.Coerce(int), vol.Range(min=_MIN_KELVIN, max=_MAX_KELVIN)
         ),
-        vol.Optional(ATTR_RGB_COLOR): vol.All(
-            vol.ExactSequence((cv.byte, cv.byte, cv.byte)), vol.Coerce(tuple)
-        ),
-        vol.Optional(ATTR_RGBW_COLOR): vol.All(
-            vol.ExactSequence((cv.byte, cv.byte, cv.byte, cv.byte)), vol.Coerce(tuple)
-        ),
-        vol.Optional(ATTR_TRANSITION): vol.All(
-            vol.Coerce(float), vol.Range(0, _MAX_TRANSITION_SEC)
-        ),
+        vol.Optional(ATTR_COLOR_TEMP): vol.All(vol.Coerce(int), vol.Range(min=1)),
+        vol.Optional(ATTR_RGB_COLOR): _RGB,
+        vol.Optional(ATTR_RGBW_COLOR): _RGBW,
+        vol.Optional(ATTR_RGBWW_COLOR): _RGBWW,
+        vol.Optional(ATTR_HS_COLOR): _HS,
+        vol.Optional(ATTR_XY_COLOR): _XY,
+        vol.Optional(ATTR_COLOR_NAME): cv.string,
     }
 )
 
 
 @dataclass
 class LightProperties:
-    """Parsed, device-agnostic light properties to apply."""
+    """Parsed, device-agnostic light properties to apply.
+
+    All of ``light.turn_on``'s color inputs are normalized here into the small
+    canonical set the Shelly device understands.
+    """
 
     brightness: int | None = None  # 0..255
     color_temp_kelvin: int | None = None
@@ -95,21 +125,55 @@ class LightProperties:
 
     @classmethod
     def from_call(cls, call: ServiceCall) -> LightProperties:
-        """Build properties from a service call, normalizing brightness."""
-        brightness = call.data.get(ATTR_BRIGHTNESS)
-        if brightness is None and ATTR_BRIGHTNESS_PCT in call.data:
-            brightness = round(255 * call.data[ATTR_BRIGHTNESS_PCT] / 100)
+        """Build canonical properties from a light.turn_on-style service call."""
+        data = call.data
+
+        brightness = data.get(ATTR_BRIGHTNESS)
+        if brightness is None and ATTR_BRIGHTNESS_PCT in data:
+            brightness = round(255 * data[ATTR_BRIGHTNESS_PCT] / 100)
+
+        color_temp_kelvin = data.get(ATTR_COLOR_TEMP_KELVIN)
+        if color_temp_kelvin is None and ATTR_COLOR_TEMP in data:
+            color_temp_kelvin = color_util.color_temperature_mired_to_kelvin(
+                data[ATTR_COLOR_TEMP]
+            )
+
+        rgb: tuple[int, int, int] | None = None
+        if ATTR_RGB_COLOR in data:
+            rgb = tuple(data[ATTR_RGB_COLOR])
+        elif ATTR_HS_COLOR in data:
+            rgb = color_util.color_hs_to_RGB(*data[ATTR_HS_COLOR])
+        elif ATTR_XY_COLOR in data:
+            rgb = color_util.color_xy_to_RGB(*data[ATTR_XY_COLOR])
+        elif ATTR_COLOR_NAME in data:
+            try:
+                rgb = tuple(color_util.color_name_to_rgb(data[ATTR_COLOR_NAME]))
+            except ValueError as err:
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN,
+                    translation_key="invalid_color_name",
+                    translation_placeholders={"name": data[ATTR_COLOR_NAME]},
+                ) from err
+
+        rgbw: tuple[int, int, int, int] | None = None
+        if ATTR_RGBW_COLOR in data:
+            rgbw = tuple(data[ATTR_RGBW_COLOR])
+        elif ATTR_RGBWW_COLOR in data:
+            red, green, blue, cold, warm = data[ATTR_RGBWW_COLOR]
+            # Shelly RGBW has a single white channel; combine the two whites.
+            rgbw = (red, green, blue, round((cold + warm) / 2))
+
         return cls(
             brightness=brightness,
-            color_temp_kelvin=call.data.get(ATTR_COLOR_TEMP_KELVIN),
-            rgb_color=call.data.get(ATTR_RGB_COLOR),
-            rgbw_color=call.data.get(ATTR_RGBW_COLOR),
-            transition=call.data.get(ATTR_TRANSITION),
+            color_temp_kelvin=color_temp_kelvin,
+            rgb_color=rgb,
+            rgbw_color=rgbw,
+            transition=data.get(ATTR_TRANSITION),
         )
 
     @property
     def has_any(self) -> bool:
-        """Return True if at least one property was requested."""
+        """Return True if at least one settable property was requested."""
         return any(
             value is not None
             for value in (
@@ -236,8 +300,8 @@ async def _async_apply(
     return await _apply_block(entity, props)
 
 
-async def _async_set_light_properties(call: ServiceCall) -> None:
-    """Handle the ``shelly_extras.set_light_properties`` service call."""
+async def _async_change_light(call: ServiceCall) -> None:
+    """Handle the ``shelly_extras.change_light`` service call."""
     hass = call.hass
     props = LightProperties.from_call(call)
     if not props.has_any:
@@ -267,7 +331,7 @@ async def _async_set_light_properties(call: ServiceCall) -> None:
     coordinators = set()
     for (entity_id, entity), result in zip(lights, results, strict=True):
         if isinstance(result, Exception):
-            LOGGER.error("Failed to set properties on %s: %s", entity_id, result)
+            LOGGER.error("Failed to change %s: %s", entity_id, result)
             errors.append(entity_id)
             continue
         if not result:
@@ -276,7 +340,7 @@ async def _async_set_light_properties(call: ServiceCall) -> None:
                 entity_id,
             )
             continue
-        LOGGER.debug("Set %s on %s", ", ".join(result), entity_id)
+        LOGGER.debug("Changed %s on %s", ", ".join(result), entity_id)
         coordinators.add(entity.coordinator)
 
     # Refresh affected devices so Home Assistant state catches up promptly.
@@ -285,23 +349,23 @@ async def _async_set_light_properties(call: ServiceCall) -> None:
 
     if errors:
         raise HomeAssistantError(
-            f"Failed to set light properties on: {', '.join(sorted(errors))}"
+            f"Failed to change light(s): {', '.join(sorted(errors))}"
         )
 
 
 def async_register_services(hass: HomeAssistant) -> None:
     """Register all Shelly Extras services."""
-    if hass.services.has_service(DOMAIN, SERVICE_SET_LIGHT_PROPERTIES):
+    if hass.services.has_service(DOMAIN, SERVICE_CHANGE_LIGHT):
         return
 
     hass.services.async_register(
         DOMAIN,
-        SERVICE_SET_LIGHT_PROPERTIES,
-        _async_set_light_properties,
-        schema=SET_LIGHT_PROPERTIES_SCHEMA,
+        SERVICE_CHANGE_LIGHT,
+        _async_change_light,
+        schema=CHANGE_LIGHT_SCHEMA,
     )
 
 
 def async_unregister_services(hass: HomeAssistant) -> None:
     """Remove all Shelly Extras services."""
-    hass.services.async_remove(DOMAIN, SERVICE_SET_LIGHT_PROPERTIES)
+    hass.services.async_remove(DOMAIN, SERVICE_CHANGE_LIGHT)

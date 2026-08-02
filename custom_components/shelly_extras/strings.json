@@ -19,6 +19,9 @@
     },
     "invalid_color_name": {
       "message": "Unknown color name: {name}."
+    },
+    "no_rpc_devices": {
+      "message": "No Gen2+ (RPC) Shelly devices were found in the selected target. Raw RPC calls are only supported on Gen2 and newer Shelly devices."
     }
   },
   "services": {
@@ -69,6 +72,20 @@
         "color_name": {
           "name": "Color name",
           "description": "A human-readable CSS color name, e.g. \"tomato\"."
+        }
+      }
+    },
+    "rpc_call": {
+      "name": "RPC call",
+      "description": "Sends a raw RPC command to the targeted Gen2+ (RPC) Shelly devices and returns each device's response. Works on any Shelly device, not just lights.",
+      "fields": {
+        "method": {
+          "name": "Method",
+          "description": "The RPC method to call, e.g. Switch.Set, Shelly.GetStatus, Sys.GetConfig."
+        },
+        "params": {
+          "name": "Parameters",
+          "description": "Optional parameters object for the method, e.g. {\"id\": 0, \"on\": true}."
         }
       }
     }

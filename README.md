@@ -51,6 +51,38 @@ How it works: RPC devices are driven via `<Component>.Set` (e.g. `RGB.Set`,
 `turn` field omitted. It reuses the core Shelly integration's own device
 connection and error handling.
 
+### `shelly_extras.rpc_call`
+
+Sends a **raw RPC command to Gen2+ (RPC) Shelly devices** and returns each
+device's response. Works on **any** Shelly device (switches, plugs, covers,
+sensors, …), not just lights.
+
+- Target Shelly **devices** (or entities/areas/labels); each is resolved to its
+  Shelly config entry. **Gen1 (block) devices are skipped** — RPC is Gen2+ only.
+  If the target contains no Gen2+ device you get a clear error.
+- `method`: the RPC method, e.g. `Switch.Set`, `Shelly.GetStatus`,
+  `Sys.GetConfig`. `params`: optional parameters object.
+- Returns a response keyed by device name, so you can capture it with
+  `response_variable`.
+
+Example — toggle a relay and read status back:
+
+```yaml
+action: shelly_extras.rpc_call
+target:
+  device_id: 1a2b3c...            # a Gen2+ Shelly device
+data:
+  method: Switch.Set
+  params:
+    id: 0
+    "on": true
+response_variable: rpc_result
+```
+
+`rpc_result` is `{"results": {"<device name>": <RPC response>}}`. On a per-device
+failure the entry is `{"error": "..."}`; if every targeted device fails the
+action raises.
+
 ## Installation (HACS custom repository)
 
 1. In HACS → *Integrations* → ⋮ → **Custom repositories**, add this repo's URL

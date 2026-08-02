@@ -13,6 +13,11 @@ SHELLY_DOMAIN = "shelly"
 
 # Service names exposed by this integration (see services.yaml).
 SERVICE_CHANGE_LIGHT = "change_light"
+SERVICE_RPC_CALL = "rpc_call"
+
+# rpc_call field names.
+ATTR_METHOD = "method"
+ATTR_PARAMS = "params"
 
 # Service field names — deliberately identical to light.turn_on so this action
 # is a drop-in replacement (same data keys work).

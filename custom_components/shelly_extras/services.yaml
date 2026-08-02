@@ -107,3 +107,22 @@ change_light:
       advanced: true
       selector:
         text:
+
+# Send a raw RPC command to Gen2+ (RPC) Shelly devices. Works on any Shelly
+# device, not just lights. Returns each device's RPC response.
+rpc_call:
+  target:
+    device:
+      integration: shelly
+    entity:
+      integration: shelly
+  fields:
+    method:
+      required: true
+      example: Switch.Set
+      selector:
+        text:
+    params:
+      example: '{"id": 0, "on": true}'
+      selector:
+        object:

@@ -35,9 +35,11 @@ from homeassistant.components.shelly.const import (
 from homeassistant.components.shelly.light import BlockShellyLight, RpcShellyLightBase
 from homeassistant.components.shelly.utils import brightness_to_percentage
 from homeassistant.const import ATTR_ENTITY_ID
+from homeassistant.core import SupportsResponse
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.entity_component import DATA_INSTANCES
+from homeassistant.helpers.service import async_extract_config_entry_ids
 from homeassistant.helpers.target import (
     TargetSelection,
     async_extract_referenced_entity_ids,
@@ -51,6 +53,8 @@ from .const import (
     ATTR_COLOR_TEMP,
     ATTR_COLOR_TEMP_KELVIN,
     ATTR_HS_COLOR,
+    ATTR_METHOD,
+    ATTR_PARAMS,
     ATTR_RGB_COLOR,
     ATTR_RGBW_COLOR,
     ATTR_RGBWW_COLOR,
@@ -59,10 +63,12 @@ from .const import (
     DOMAIN,
     LOGGER,
     SERVICE_CHANGE_LIGHT,
+    SERVICE_RPC_CALL,
+    SHELLY_DOMAIN,
 )
 
 if TYPE_CHECKING:
-    from homeassistant.core import HomeAssistant, ServiceCall
+    from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse
     from homeassistant.helpers.entity_component import EntityComponent
 
 # Reasonable Kelvin bounds; the actual device range is applied per light.
@@ -382,6 +388,76 @@ async def _async_change_light(call: ServiceCall) -> None:
         )
 
 
+RPC_CALL_SCHEMA = vol.Schema(
+    {
+        **cv.ENTITY_SERVICE_FIELDS,
+        vol.Required(ATTR_METHOD): cv.string,
+        vol.Optional(ATTR_PARAMS): dict,
+    }
+)
+
+
+def _shelly_rpc_coordinators(
+    hass: HomeAssistant, entry_ids: set[str]
+) -> list[tuple[str, Any]]:
+    """Return (device name, RPC coordinator) for loaded Gen2+ Shelly entries.
+
+    Gen1 (block) devices and unloaded/foreign entries are skipped: only Shelly
+    config entries whose runtime data carries an ``rpc`` coordinator qualify.
+    """
+    result: list[tuple[str, Any]] = []
+    for entry_id in entry_ids:
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if entry is None or entry.domain != SHELLY_DOMAIN:
+            continue
+        rpc = getattr(getattr(entry, "runtime_data", None), "rpc", None)
+        if rpc is None:
+            LOGGER.debug(
+                "Skipping Shelly entry %s: not a loaded Gen2+ (RPC) device",
+                entry.title,
+            )
+            continue
+        result.append((entry.title, rpc))
+    return result
+
+
+async def _async_rpc_call(call: ServiceCall) -> ServiceResponse:
+    """Handle ``shelly_extras.rpc_call``: send a raw RPC to Gen2+ Shelly devices."""
+    hass = call.hass
+    method = call.data[ATTR_METHOD]
+    params = call.data.get(ATTR_PARAMS)
+
+    entry_ids = await async_extract_config_entry_ids(call)
+    coordinators = _shelly_rpc_coordinators(hass, entry_ids)
+    if not coordinators:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN, translation_key="no_rpc_devices"
+        )
+
+    responses = await asyncio.gather(
+        *(rpc.device.call_rpc(method, params) for _, rpc in coordinators),
+        return_exceptions=True,
+    )
+
+    results: dict[str, Any] = {}
+    errors: list[str] = []
+    for (name, _), response in zip(coordinators, responses, strict=True):
+        if isinstance(response, Exception):
+            LOGGER.error("RPC %s failed on %s: %s", method, name, response)
+            errors.append(name)
+            results[name] = {"error": str(response)}
+        else:
+            LOGGER.debug("RPC %s on %s -> %s", method, name, response)
+            results[name] = response
+
+    if errors and len(errors) == len(coordinators):
+        raise HomeAssistantError(
+            f"RPC '{method}' failed on: {', '.join(sorted(errors))}"
+        )
+
+    return {"results": results}
+
+
 def async_register_services(hass: HomeAssistant) -> None:
     """Register all Shelly Extras services."""
     if hass.services.has_service(DOMAIN, SERVICE_CHANGE_LIGHT):
@@ -394,7 +470,16 @@ def async_register_services(hass: HomeAssistant) -> None:
         schema=CHANGE_LIGHT_SCHEMA,
     )
 
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_RPC_CALL,
+        _async_rpc_call,
+        schema=RPC_CALL_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+
 
 def async_unregister_services(hass: HomeAssistant) -> None:
     """Remove all Shelly Extras services."""
     hass.services.async_remove(DOMAIN, SERVICE_CHANGE_LIGHT)
+    hass.services.async_remove(DOMAIN, SERVICE_RPC_CALL)

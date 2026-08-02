@@ -85,7 +85,7 @@
         },
         "params": {
           "name": "Parameters",
-          "description": "Optional parameters object for the method, e.g. {\"id\": 0, \"on\": true}."
+          "description": "Optional parameters for the method, passed as an object. Example for Switch.Set: id 0, on true."
         }
       }
     }

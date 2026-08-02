@@ -34,8 +34,8 @@ from homeassistant.components.shelly.utils import brightness_to_percentage
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.entity_component import DATA_INSTANCES
-from homeassistant.helpers.service import (
-    ServiceTargetSelector,
+from homeassistant.helpers.target import (
+    TargetSelection,
     async_extract_referenced_entity_ids,
 )
 
@@ -245,7 +245,7 @@ async def _async_set_light_properties(call: ServiceCall) -> None:
             translation_domain=DOMAIN, translation_key="no_properties"
         )
 
-    selected = async_extract_referenced_entity_ids(hass, ServiceTargetSelector(call))
+    selected = async_extract_referenced_entity_ids(hass, TargetSelection(call.data))
     entity_ids = selected.referenced | selected.indirectly_referenced
 
     lights = [

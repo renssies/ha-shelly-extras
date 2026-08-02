@@ -1,20 +1,53 @@
 # Actions (services) exposed by Shelly Extras.
-example_action:
-  name: Example action
-  description: >-
-    Placeholder action. Replace with a real Shelly Extras action.
+set_light_properties:
+  # Same target picker as light.turn_on, restricted to Shelly lights: a single
+  # light entity, a device, an area, or a label all work.
+  target:
+    entity:
+      domain: light
+      integration: shelly
   fields:
-    device_id:
-      name: Device
-      description: The target Shelly device id.
-      required: true
-      example: "shellyplus1pm-abc123"
-      selector:
-        text:
-    value:
-      name: Value
-      description: An optional value passed to the action.
+    brightness:
       required: false
-      example: "on"
+      example: 128
       selector:
-        text:
+        number:
+          min: 0
+          max: 255
+          mode: slider
+    brightness_pct:
+      required: false
+      example: 50
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
+          mode: slider
+    color_temp_kelvin:
+      required: false
+      example: 3500
+      selector:
+        color_temp:
+          unit: kelvin
+          min: 2000
+          max: 6500
+    rgb_color:
+      required: false
+      example: "[255, 100, 100]"
+      selector:
+        color_rgb:
+    rgbw_color:
+      required: false
+      example: "[255, 100, 100, 255]"
+      selector:
+        object:
+    transition:
+      required: false
+      example: 2
+      selector:
+        number:
+          min: 0
+          max: 300
+          unit_of_measurement: seconds
+          mode: box

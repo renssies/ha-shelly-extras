@@ -3,12 +3,14 @@
 # fields that don't apply to the selected light (e.g. a brightness-only light
 # shows no color fields), exactly like light.turn_on.
 change_light:
-  # Same target picker as light.turn_on, restricted to Shelly lights: a single
-  # light entity, a device, an area, or a label all work.
+  # Exactly the same target picker as light.turn_on: a single light entity, a
+  # device, an area, or a label. It is intentionally NOT restricted to
+  # `integration: shelly` — that restriction prevents the frontend from
+  # resolving a device/area target to its entities, which hides all the fields.
+  # Non-Shelly targets are filtered out by the action handler instead.
   target:
     entity:
       domain: light
-      integration: shelly
   fields:
     transition:
       filter:

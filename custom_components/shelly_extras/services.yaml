@@ -111,11 +111,15 @@ change_light:
 # Send a raw RPC command to Gen2+ (RPC) Shelly devices. Works on any Shelly
 # device, not just lights. Returns each device's RPC response.
 rpc_call:
+  # Targetable: Shelly devices, areas, labels, and light groups. The entity
+  # picker is `domain: light` (not `integration: shelly`) so light groups — which
+  # are light entities, not Shelly entities — can be selected; the handler
+  # expands groups to their members and keeps only Gen2+ Shelly devices.
   target:
     device:
       integration: shelly
     entity:
-      integration: shelly
+      domain: light
   fields:
     method:
       required: true

@@ -57,9 +57,11 @@ Sends a **raw RPC command to Gen2+ (RPC) Shelly devices** and returns each
 device's response. Works on **any** Shelly device (switches, plugs, covers,
 sensors, …), not just lights.
 
-- Target Shelly **devices** (or entities/areas/labels); each is resolved to its
-  Shelly config entry. **Gen1 (block) devices are skipped** — RPC is Gen2+ only.
-  If the target contains no Gen2+ device you get a clear error.
+- Target **Shelly devices, areas, labels, and light groups**. Areas/labels
+  resolve to their Shelly devices; light groups are expanded to their member
+  lights' devices. Each is resolved to a Shelly config entry, and **Gen1 (block)
+  devices are skipped** — RPC is Gen2+ only. If the target contains no Gen2+
+  device you get a clear error.
 - `method`: the RPC method, e.g. `Switch.Set`, `Shelly.GetStatus`,
   `Sys.GetConfig`. `params`: optional parameters object.
 - Returns a response keyed by device name, so you can capture it with

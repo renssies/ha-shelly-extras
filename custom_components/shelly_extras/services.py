@@ -38,8 +38,9 @@ from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.core import SupportsResponse
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_component import DATA_INSTANCES
-from homeassistant.helpers.service import async_extract_config_entry_ids
 from homeassistant.helpers.target import (
     TargetSelection,
     async_extract_referenced_entity_ids,
@@ -397,6 +398,41 @@ RPC_CALL_SCHEMA = vol.Schema(
 )
 
 
+def _referenced_config_entry_ids(hass: HomeAssistant, call: ServiceCall) -> set[str]:
+    """Resolve a target to config entry ids, expanding light groups.
+
+    Handles Shelly devices, areas, labels and light groups: device/area/label
+    targets resolve to their devices' config entries, and entity targets (incl.
+    light groups, which are expanded to their member entities) resolve via each
+    entity's own config entry. Filtering to Gen2+ Shelly happens later.
+    """
+    selected = async_extract_referenced_entity_ids(hass, TargetSelection(call.data))
+    entity_ids = _expand_group_members(
+        hass, selected.referenced | selected.indirectly_referenced
+    )
+
+    ent_reg = er.async_get(hass)
+    dev_reg = dr.async_get(hass)
+    entry_ids: set[str] = set()
+
+    for device_id in selected.referenced_devices:
+        if (device := dev_reg.async_get(device_id)) is not None:
+            entry_ids.update(device.config_entries)
+
+    for entity_id in entity_ids:
+        entity = ent_reg.async_get(entity_id)
+        if entity is None:
+            continue
+        if entity.config_entry_id is not None:
+            entry_ids.add(entity.config_entry_id)
+        # A group member's light entity may itself have no config entry but be
+        # tied to a device (rare); pull the device's entries too.
+        if entity.device_id and (device := dev_reg.async_get(entity.device_id)):
+            entry_ids.update(device.config_entries)
+
+    return entry_ids
+
+
 def _shelly_rpc_coordinators(
     hass: HomeAssistant, entry_ids: set[str]
 ) -> list[tuple[str, Any]]:
@@ -427,7 +463,7 @@ async def _async_rpc_call(call: ServiceCall) -> ServiceResponse:
     method = call.data[ATTR_METHOD]
     params = call.data.get(ATTR_PARAMS)
 
-    entry_ids = await async_extract_config_entry_ids(call)
+    entry_ids = _referenced_config_entry_ids(hass, call)
     coordinators = _shelly_rpc_coordinators(hass, entry_ids)
     if not coordinators:
         raise ServiceValidationError(

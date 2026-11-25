@@ -47,6 +47,11 @@ from homeassistant.helpers.target import (
 )
 from homeassistant.util import color as color_util
 
+try:  # Home Assistant 2026.11+: targets can carry an `exclude` block.
+    from homeassistant.helpers.target import async_extract_excluded_entity_ids
+except ImportError:  # pragma: no cover - older Home Assistant
+    async_extract_excluded_entity_ids = None
+
 from .const import (
     ATTR_BRIGHTNESS,
     ATTR_BRIGHTNESS_PCT,
@@ -219,6 +224,25 @@ def _expand_group_members(hass: HomeAssistant, entity_ids: set[str]) -> set[str]
     return resolved
 
 
+def _target_entity_ids(hass: HomeAssistant, call: ServiceCall) -> set[str]:
+    """Resolve a call's target to leaf entity ids, expanding light groups.
+
+    Core removes entities matched by the target's ``exclude`` block, but we
+    expand light groups ourselves afterwards, which could re-add an excluded
+    member; so the exclusions are applied again after expansion. Excluded
+    light groups are expanded too, so excluding a group excludes its members.
+    """
+    selection = TargetSelection(call.data)
+    selected = async_extract_referenced_entity_ids(hass, selection)
+    entity_ids = _expand_group_members(
+        hass, selected.referenced | selected.indirectly_referenced
+    )
+    if async_extract_excluded_entity_ids is not None:
+        excluded = async_extract_excluded_entity_ids(hass, selection)
+        entity_ids -= excluded | _expand_group_members(hass, excluded)
+    return entity_ids
+
+
 def _resolve_shelly_light(
     hass: HomeAssistant, entity_id: str
 ) -> RpcShellyLightBase | BlockShellyLight | None:
@@ -343,10 +367,7 @@ async def _async_change_light(call: ServiceCall) -> None:
             translation_domain=DOMAIN, translation_key="no_properties"
         )
 
-    selected = async_extract_referenced_entity_ids(hass, TargetSelection(call.data))
-    entity_ids = _expand_group_members(
-        hass, selected.referenced | selected.indirectly_referenced
-    )
+    entity_ids = _target_entity_ids(hass, call)
 
     lights = [
         (entity_id, entity)
@@ -406,10 +427,10 @@ def _referenced_config_entry_ids(hass: HomeAssistant, call: ServiceCall) -> set[
     light groups, which are expanded to their member entities) resolve via each
     entity's own config entry. Filtering to Gen2+ Shelly happens later.
     """
+    # Devices targeted directly, or via an area/label (exclusions already applied
+    # by core). A device belongs to exactly one config entry since HA 2026.8.
     selected = async_extract_referenced_entity_ids(hass, TargetSelection(call.data))
-    entity_ids = _expand_group_members(
-        hass, selected.referenced | selected.indirectly_referenced
-    )
+    entity_ids = _target_entity_ids(hass, call)
 
     ent_reg = er.async_get(hass)
     dev_reg = dr.async_get(hass)
@@ -417,7 +438,7 @@ def _referenced_config_entry_ids(hass: HomeAssistant, call: ServiceCall) -> set[
 
     for device_id in selected.referenced_devices:
         if (device := dev_reg.async_get(device_id)) is not None:
-            entry_ids.update(device.config_entries)
+            entry_ids.add(device.config_entry_id)
 
     for entity_id in entity_ids:
         entity = ent_reg.async_get(entity_id)
@@ -426,9 +447,9 @@ def _referenced_config_entry_ids(hass: HomeAssistant, call: ServiceCall) -> set[
         if entity.config_entry_id is not None:
             entry_ids.add(entity.config_entry_id)
         # A group member's light entity may itself have no config entry but be
-        # tied to a device (rare); pull the device's entries too.
-        if entity.device_id and (device := dev_reg.async_get(entity.device_id)):
-            entry_ids.update(device.config_entries)
+        # tied to a device (rare); use the device's entry instead.
+        elif entity.device_id and (device := dev_reg.async_get(entity.device_id)):
+            entry_ids.add(device.config_entry_id)
 
     return entry_ids
 
